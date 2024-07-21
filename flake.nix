@@ -1,19 +1,30 @@
 {
-  description = "Zig SCRAM";
   inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
-    zig.url = "github:mitchellh/zig-overlay";
+    nixpkgs = {
+      url = "nixpkgs/nixos-unstable";
+    };
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+    };
   };
-  
-  outputs = { self, nixpkgs, flake-utils, zig }:
-    flake-utils.lib.eachDefaultSystem
-      (system:
-        let pkgs = nixpkgs.legacyPackages.${system}; in
-          {
-            devShells.default = import ./shell.nix {
-              inherit pkgs;
-              zig = zig.packages.${system}.master;
-            };
-          }
-        );
+  outputs = {
+    nixpkgs,
+    flake-utils,
+    ...
+  } @ inputs:
+    flake-utils.lib.eachDefaultSystem (
+      system: let
+        pkgs = import nixpkgs {
+          inherit system;
+        };
+      in {
+        devShells.default = pkgs.mkShell {
+          nativeBuildInputs = [
+            pkgs.zig_0_13
+          ];
+          buildInputs = [
+          ];
+        };
+      }
+    );
 }

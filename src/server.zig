@@ -303,7 +303,7 @@ pub fn stringToServerError(err: []const u8) ?ServerError {
         }
         break :build_kvs kvs_array[0..];
     };
-    const map = std.ComptimeStringMap(ServerError, kvs);
+    const map = std.StaticStringMap(ServerError).initComptime(kvs);
     return map.get(err);
 }
 
