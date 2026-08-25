@@ -1,0 +1,6 @@
+# Build artifacts and the local build cache.
+.zig-cache/
+zig-out/
+
+# Dependencies materialized from build.zig.zon by `zig fetch` / `zig build`.
+zig-pkg/
