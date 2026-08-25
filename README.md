@@ -194,14 +194,23 @@ suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 
 ## License
 
-MIT, see `LICENSES/MIT.txt`. Every file carries an SPDX header, so the project
-is [REUSE] compliant and `reuse lint` passes.
+MIT, with one exception: `src/stringprep_tables.zig` is `MIT AND PostgreSQL`,
+because it is transcribed from PostgreSQL's `src/common/saslprep.c` — including
+that file's merging of adjacent ranges — and the PostgreSQL License requires its
+notice be retained. Both licenses are permissive and impose nothing beyond
+attribution.
 
-One caveat worth knowing: the codepoint ranges in `src/stringprep_tables.zig`
-are the tables published in RFC 3454, transcribed via PostgreSQL's
-`src/common/saslprep.c`. They are covered here by the same MIT grant as
-everything else, but if that provenance matters for your use, review it rather
-than taking the header at face value.
+The underlying tables are published in RFC 3454, whose copyright statement
+allows derivative works that "assist in its implementation ... without
+restriction of any kind", so no further grant is needed for them.
+
+Every file carries an SPDX header and the license texts are in `LICENSES/`, so
+the project is [REUSE] compliant and `reuse lint` passes.
+
+Note for anyone distributing a binary built from this: the Unicode character
+data reaches you through uucode, which ships the Unicode License alongside its
+own MIT license. Nothing to do when consuming this as source, but the Unicode
+License asks for its notice in distributions.
 
 [REUSE]: https://reuse.software/
 [RFC 4013]: https://www.rfc-editor.org/rfc/rfc4013

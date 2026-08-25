@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
-// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2017-2024 PostgreSQL Global Development Group
+// SPDX-License-Identifier: MIT AND PostgreSQL
 
 //! Codepoint range tables from [RFC 3454] (stringprep), as used by the
 //! SASLprep profile in [RFC 4013].
