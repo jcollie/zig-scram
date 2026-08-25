@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! NFKC (Unicode Normalization Form KC), built on the character data that
 //! [uucode] exposes. This is the normalization step of SASLprep; see
 //! `saslprep.zig` for the rest of the profile.

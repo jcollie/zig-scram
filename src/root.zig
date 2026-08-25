@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! PostgreSQL SCRAM-SHA-256 password verifiers.
 //!
 //!     var threaded: std.Io.Threaded = .init(gpa, .{});

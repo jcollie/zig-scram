@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 .{
     .name = .scram_sha_256,
     .version = "0.0.0",
@@ -14,5 +17,6 @@
         "build.zig.zon",
         "src",
         "README.md",
+        "LICENSES",
     },
 }

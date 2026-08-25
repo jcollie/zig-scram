@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! SCRAM-SHA-256 password verifiers in the format PostgreSQL stores in
 //! `pg_authid.rolpassword`:
 //!

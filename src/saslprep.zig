@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! SASLprep ([RFC 4013]), the stringprep profile SCRAM applies to a password
 //! before deriving keys from it.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! CLI wrapper: reads a password and prints the PostgreSQL SCRAM-SHA-256
 //! verifier for it.
 

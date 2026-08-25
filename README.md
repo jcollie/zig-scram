@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+SPDX-License-Identifier: MIT
+-->
+
 # zig-scram-sha-256
 
 Compute PostgreSQL SCRAM-SHA-256 password verifiers in Zig, without sending the
@@ -187,5 +192,17 @@ suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 | `src/stringprep_tables.zig` | RFC 3454 range tables, transcribed from `saslprep.c`. |
 | `src/main.zig` | The CLI. |
 
+## License
+
+MIT, see `LICENSES/MIT.txt`. Every file carries an SPDX header, so the project
+is [REUSE] compliant and `reuse lint` passes.
+
+One caveat worth knowing: the codepoint ranges in `src/stringprep_tables.zig`
+are the tables published in RFC 3454, transcribed via PostgreSQL's
+`src/common/saslprep.c`. They are covered here by the same MIT grant as
+everything else, but if that provenance matters for your use, review it rather
+than taking the header at face value.
+
+[REUSE]: https://reuse.software/
 [RFC 4013]: https://www.rfc-editor.org/rfc/rfc4013
 [RFC 7677]: https://www.rfc-editor.org/rfc/rfc7677

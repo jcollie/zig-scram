@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Codepoint range tables from [RFC 3454] (stringprep), as used by the
 //! SASLprep profile in [RFC 4013].
 //!
