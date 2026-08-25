@@ -26,7 +26,7 @@ Requires Zig 0.16.0.
 ## Install
 
 ```sh
-zig fetch --save git+<repo-url>
+zig fetch --save git+https://codeberg.org/jcollie/zig-scram-sha-256.git
 ```
 
 ```zig
