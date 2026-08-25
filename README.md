@@ -43,6 +43,37 @@ SASLprep step. It is built with just the four fields this module reads.
 
 [uucode]: https://github.com/jacobsandlund/uucode
 
+## Cloning with Radicle
+
+The repository is also published on [Radicle], a peer-to-peer network where a
+repository has no canonical host — it lives on whichever nodes choose to seed
+it. Its Repository ID is:
+
+```
+rad:z3p1EVd76fZgybgAPzCpM25LAUCwP
+```
+
+With a [Radicle node] running (`rad node start`):
+
+```sh
+rad clone rad:z3p1EVd76fZgybgAPzCpM25LAUCwP
+```
+
+`clone` consults your node's routing table to find a seed holding the
+repository, so no host has to be named. The default branch is `main`, the same
+history you would get from Codeberg. To help keep it available, seed it:
+
+```sh
+rad seed rad:z3p1EVd76fZgybgAPzCpM25LAUCwP
+```
+
+Zig's package manager does not speak `rad://`, so `zig fetch` still wants the
+`git+https` URL above. Radicle is for getting the source, filing issues, and
+sending patches without a forge account.
+
+[Radicle]: https://radicle.xyz/
+[Radicle node]: https://radicle.xyz/#get-started
+
 ## Use
 
 ```zig
