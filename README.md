@@ -145,6 +145,24 @@ $ ./zig-out/bin/scram_sha_256 --help
 `-i/--iterations`, `-s/--salt-length`, `--raw`, and `--strict-prep` map onto the
 options above.
 
+### Shell completions
+
+`zig build install` writes fish and bash completions under the prefix, in the
+directories both shells already search:
+
+```console
+$ zig build install --prefix ~/.local
+$ ls ~/.local/share/fish/vendor_completions.d/scram_sha_256.fish
+$ ls ~/.local/share/bash-completion/completions/scram_sha_256
+```
+
+Both shells search `$XDG_DATA_HOME` (usually `~/.local/share`) and every prefix
+on `$XDG_DATA_DIRS`, so a prefix already on those paths needs no further setup.
+bash also needs the `bash-completion` package, which loads the file on demand
+the first time `scram_sha_256` is completed. Nothing searches `zig-out`, the
+default prefix, so either install to a real prefix or source the files from
+`completions/` directly.
+
 ## SASLprep
 
 SCRAM does not hash the password bytes directly. It hashes
@@ -222,6 +240,7 @@ suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 | `src/nfkc.zig` | NFKC (UAX #15) over uucode's character data. |
 | `src/stringprep_tables.zig` | RFC 3454 range tables, transcribed from `saslprep.c`. |
 | `src/main.zig` | The CLI. |
+| `completions/` | fish and bash completions for the CLI. |
 
 ## License
 

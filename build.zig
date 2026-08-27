@@ -41,6 +41,12 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    // Shell completions, in the directories fish and bash-completion search
+    // under a prefix. Installed alongside the binary so that `zig build
+    // --prefix ~/.local` puts them somewhere both shells already look.
+    b.installFile("completions/scram_sha_256.fish", "share/fish/vendor_completions.d/scram_sha_256.fish");
+    b.installFile("completions/scram_sha_256.bash", "share/bash-completion/completions/scram_sha_256");
+
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
