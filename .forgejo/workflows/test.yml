@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+# SPDX-License-Identifier: MIT
+
+name: test
+
+on: push
+
+jobs:
+  test:
+    # One of Codeberg's hosted runners: 2 CPUs, 4G, and a 5 minute limit.
+    # See https://codeberg.org/actions/meta for the rest of the labels.
+    runs-on: codeberg-small
+
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      # Codeberg resolves bare action names against code.forgejo.org, so this
+      # one needs its full URL. With no version input it installs the
+      # minimum_zig_version from build.zig.zon, which is the version worth
+      # testing against, and it caches Zig's global cache itself — that is
+      # where the uucode fetch and its generated Unicode tables live.
+      - uses: https://github.com/mlugg/setup-zig@v2
+
+      - name: Run the tests
+        run: |
+          zig version
+          zig build test --summary all
