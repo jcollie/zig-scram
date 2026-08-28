@@ -3,7 +3,11 @@
 
 name: test
 
-on: push
+# The workflow has to be on the default branch for the manual trigger to show
+# up in the UI, where it appears as a "Run workflow" button on the Actions tab.
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   test:
