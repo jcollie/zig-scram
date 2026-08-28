@@ -14,6 +14,14 @@ jobs:
     steps:
       - uses: https://code.forgejo.org/actions/checkout@v4
 
+      # Every file needs an SPDX header and every license a file in LICENSES/,
+      # which is easy to forget when adding one. reuse is a Python tool and the
+      # runner image ships pipx, so no install step of its own is needed. The
+      # major version is pinned so that a new REUSE specification cannot turn
+      # this red without a change here.
+      - name: Check REUSE compliance
+        run: pipx run --spec 'reuse>=6,<7' reuse lint
+
       # Codeberg resolves bare action names against code.forgejo.org, so this
       # one needs its full URL. With no version input it installs the
       # minimum_zig_version from build.zig.zon, which is the version worth
