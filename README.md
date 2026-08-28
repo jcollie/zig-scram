@@ -136,10 +136,10 @@ default, since `-p` puts it in the process table where other users can see it.
 
 ```console
 $ zig build
-$ printf 'hunter2' | ./zig-out/bin/scram_sha_256
+$ printf 'hunter2' | ./zig-out/bin/scram-sha-256
 SCRAM-SHA-256$4096:zLU9phQvqg5BXTM1oxGFsQ==$NokuUG1vCRqy...:l/jd28uhQujg...
 
-$ ./zig-out/bin/scram_sha_256 --help
+$ ./zig-out/bin/scram-sha-256 --help
 ```
 
 `-i/--iterations`, `-s/--salt-length`, `--raw`, and `--strict-prep` map onto the
@@ -152,14 +152,14 @@ directories both shells already search:
 
 ```console
 $ zig build install --prefix ~/.local
-$ ls ~/.local/share/fish/vendor_completions.d/scram_sha_256.fish
-$ ls ~/.local/share/bash-completion/completions/scram_sha_256
+$ ls ~/.local/share/fish/vendor_completions.d/scram-sha-256.fish
+$ ls ~/.local/share/bash-completion/completions/scram-sha-256
 ```
 
 Both shells search `$XDG_DATA_HOME` (usually `~/.local/share`) and every prefix
 on `$XDG_DATA_DIRS`, so a prefix already on those paths needs no further setup.
 bash also needs the `bash-completion` package, which loads the file on demand
-the first time `scram_sha_256` is completed. Nothing searches `zig-out`, the
+the first time `scram-sha-256` is completed. Nothing searches `zig-out`, the
 default prefix, so either install to a real prefix or source the files from
 `completions/` directly.
 

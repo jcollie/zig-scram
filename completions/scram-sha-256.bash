@@ -25,4 +25,4 @@ _scram_sha_256() {
 
 # No -o default: the tool takes no file arguments, so falling back to filename
 # completion would only ever produce an unrecognized argument.
-complete -F _scram_sha_256 scram_sha_256
+complete -F _scram_sha_256 scram-sha-256

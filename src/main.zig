@@ -10,7 +10,7 @@ const Io = std.Io;
 const scram = @import("scram_sha_256");
 
 const usage =
-    \\usage: scram_sha_256 [options]
+    \\usage: scram-sha-256 [options]
     \\
     \\Reads a password from stdin and prints the PostgreSQL SCRAM-SHA-256
     \\verifier for it, suitable for:
