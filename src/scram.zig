@@ -1,7 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
-//! SCRAM-SHA-256 password verifiers in the format PostgreSQL stores in
+//! SCRAM-SHA-256: the instantiation of [RFC 5802] that [RFC 7677] defines,
+//! and the one PostgreSQL speaks.
+//!
+//! Everything here is `mechanism.Mechanism(Sha256)` under a shorter name.
+//! That module is where the code lives and where the protocol is explained;
+//! this one exists because SHA-256 is what almost every caller wants, and
+//! writing `scram.Client` should not require choosing a hash first.
+//!
+//! ## Verifiers
+//!
+//! `Secret` is a password verifier in the format PostgreSQL stores in
 //! `pg_authid.rolpassword`:
 //!
 //!     SCRAM-SHA-256$<iterations>:<base64 salt>$<base64 StoredKey>:<base64 ServerKey>
@@ -11,259 +21,69 @@
 //! scram-sha-256`, so it can be handed to `PASSWORD '...'` verbatim and the
 //! plaintext never has to reach the server.
 //!
-//! Derivation (RFC 5802 / RFC 7677):
+//! The format is PostgreSQL's rather than anything the RFCs define — they
+//! describe what a server must know, not how to write it down — so while
+//! `ScramSha1.Secret` renders the same shape under a `SCRAM-SHA-1$` tag, only
+//! the SHA-256 spelling is a string PostgreSQL will accept.
 //!
-//!     SaltedPassword := PBKDF2-HMAC-SHA-256(SASLprep(password), salt, iterations, 32)
-//!     ClientKey      := HMAC-SHA-256(SaltedPassword, "Client Key")
-//!     StoredKey      := SHA-256(ClientKey)
-//!     ServerKey      := HMAC-SHA-256(SaltedPassword, "Server Key")
+//! ## The exchange
 //!
-//! SASLprep is implemented in `saslprep.zig`, on top of the Unicode character
-//! data from `uucode`.
+//! `Client` runs the four-message authentication itself, against a PostgreSQL
+//! server or anything else that speaks SCRAM:
+//!
+//!     var client: scram.Client = try .init(gpa, io, .{
+//!         .username = "user",
+//!         .password = "pencil",
+//!     });
+//!     defer client.deinit();
+//!
+//!     try conn.send(client.clientFirst());
+//!     try client.handleServerFirst(try conn.receive());
+//!     try conn.send(try client.clientFinal());
+//!     try client.handleServerFinal(try conn.receive());
+//!
+//! [RFC 5802]: https://www.rfc-editor.org/rfc/rfc5802
+//! [RFC 7677]: https://www.rfc-editor.org/rfc/rfc7677
 
 const std = @import("std");
 const Io = std.Io;
 
-const saslprep = @import("saslprep.zig");
+const mechanism = @import("mechanism.zig");
+const messages = @import("messages.zig");
 
-const Allocator = std.mem.Allocator;
-const Sha256 = std.crypto.hash.sha2.Sha256;
-const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
 const b64 = std.base64.standard;
 
-/// Length of StoredKey and ServerKey, in bytes.
-pub const key_length = Sha256.digest_length;
+/// SCRAM-SHA-256 (RFC 7677). Everything else in this file is an alias into it.
+pub const ScramSha256 = mechanism.Mechanism(std.crypto.hash.sha2.Sha256);
 
-/// PostgreSQL's built-in default (`SCRAM_DEFAULT_ITERATIONS`, also the default
-/// of the `scram_iterations` GUC added in PostgreSQL 16).
-pub const default_iterations: u32 = 4096;
+/// SCRAM-SHA-1 (RFC 5802's own instantiation), for talking to something that
+/// offers nothing better. SHA-1's collision resistance is gone, but SCRAM
+/// leans on HMAC and PBKDF2, which do not need it; prefer SHA-256 anyway,
+/// because a peer offering only SHA-1 is usually old in other ways too.
+pub const ScramSha1 = mechanism.Mechanism(std.crypto.hash.Sha1);
 
-/// PostgreSQL's `SCRAM_DEFAULT_SALT_LEN`.
-pub const default_salt_length: usize = 16;
+pub const Secret = ScramSha256.Secret;
+pub const Client = ScramSha256.Client;
+pub const Keys = ScramSha256.Keys;
+pub const Options = ScramSha256.GenerateOptions;
+pub const Normalization = mechanism.Normalization;
+pub const ChannelBinding = messages.ChannelBinding;
+pub const Error = ScramSha256.Error;
+pub const DeriveError = ScramSha256.DeriveError;
+pub const ParseError = ScramSha256.ParseError;
 
-/// Longest salt this module will store. PostgreSQL generates 16-byte salts;
-/// the extra room is only so that verifiers produced elsewhere still parse.
-pub const max_salt_length: usize = 64;
+pub const compute = ScramSha256.compute;
+pub const generate = ScramSha256.generate;
+pub const deriveKeys = ScramSha256.deriveKeys;
 
-/// The mechanism tag, including the separator that follows it.
-pub const prefix = "SCRAM-SHA-256$";
-
-/// Upper bound on the length of an encoded verifier, for sizing stack buffers.
-pub const max_encoded_length = prefix.len +
-    10 + // decimal digits of a u32
-    1 + b64.Encoder.calcSize(max_salt_length) +
-    1 + b64.Encoder.calcSize(key_length) +
-    1 + b64.Encoder.calcSize(key_length);
-
-/// How to prepare the plaintext before deriving keys from it.
-pub const Normalization = enum {
-    /// Apply SASLprep (RFC 4013), falling back to the raw bytes if it fails.
-    /// This is what PostgreSQL does, so it is what reproduces the server's
-    /// verifier for any password.
-    saslprep,
-
-    /// Use the password bytes as given. Correct only if the caller has already
-    /// prepared the password, or knows it is pure ASCII.
-    raw,
-};
-
-pub const Error = error{
-    /// `iterations` was zero.
-    InvalidIterationCount,
-    /// The salt was empty.
-    SaltTooShort,
-    /// The salt was longer than `max_salt_length`.
-    SaltTooLong,
-    OutOfMemory,
-};
-
-pub const ParseError = error{
-    /// The text does not start with `SCRAM-SHA-256$`.
-    UnsupportedMechanism,
-    /// The `<iterations>:<salt>$<stored>:<server>` shape is wrong.
-    MalformedVerifier,
-    /// The iteration count is not a decimal number that fits in a u32.
-    InvalidIterationCount,
-    /// A base64 field would not decode.
-    InvalidBase64,
-    /// The salt was empty or longer than `max_salt_length`.
-    SaltTooShort,
-    SaltTooLong,
-    /// StoredKey or ServerKey was not `key_length` bytes.
-    InvalidKeyLength,
-};
-
-/// Options for `generate`.
-pub const Options = struct {
-    /// PBKDF2 rounds. Must be at least 1; PostgreSQL uses `default_iterations`.
-    iterations: u32 = default_iterations,
-    /// Number of random salt bytes to draw. Must be in `1..=max_salt_length`.
-    salt_length: usize = default_salt_length,
-    normalization: Normalization = .saslprep,
-};
-
-/// A parsed or freshly derived verifier. Contains no secret material: the
-/// plaintext cannot be recovered from it, though it is still enough to
-/// impersonate the server to a client, so treat it as sensitive.
-pub const Secret = struct {
-    iterations: u32,
-    salt_buf: [max_salt_length]u8,
-    salt_len: u8,
-    stored_key: [key_length]u8,
-    server_key: [key_length]u8,
-
-    pub fn salt(self: *const Secret) []const u8 {
-        return self.salt_buf[0..self.salt_len];
-    }
-
-    /// Renders the verifier. Use the `{f}` placeholder:
-    /// `try writer.print("{f}", .{secret})`.
-    pub fn format(self: Secret, w: *Io.Writer) Io.Writer.Error!void {
-        // One scratch buffer per field: `encode` returns a slice into the
-        // buffer it was handed, so sharing one across a single `print` would
-        // let the last call clobber the earlier ones.
-        var salt_buf: [b64.Encoder.calcSize(max_salt_length)]u8 = undefined;
-        var stored_buf: [b64.Encoder.calcSize(key_length)]u8 = undefined;
-        var server_buf: [b64.Encoder.calcSize(key_length)]u8 = undefined;
-        try w.print("{s}{d}:{s}${s}:{s}", .{
-            prefix,
-            self.iterations,
-            b64.Encoder.encode(&salt_buf, self.salt()),
-            b64.Encoder.encode(&stored_buf, &self.stored_key),
-            b64.Encoder.encode(&server_buf, &self.server_key),
-        });
-    }
-
-    /// Writes the verifier into `buf`, which must be at least
-    /// `max_encoded_length` bytes to be safe for any input.
-    pub fn bufPrint(self: *const Secret, buf: []u8) error{NoSpaceLeft}![]const u8 {
-        return std.fmt.bufPrint(buf, "{f}", .{self.*});
-    }
-
-    /// Caller owns the returned memory.
-    pub fn toOwnedString(self: *const Secret, gpa: Allocator) ![]u8 {
-        return std.fmt.allocPrint(gpa, "{f}", .{self.*});
-    }
-
-    /// Reads a verifier back out of `rolpassword` form.
-    pub fn parse(text: []const u8) ParseError!Secret {
-        if (!std.mem.startsWith(u8, text, prefix)) return error.UnsupportedMechanism;
-        const body = text[prefix.len..];
-
-        const dollar = std.mem.indexOfScalar(u8, body, '$') orelse return error.MalformedVerifier;
-        const params = body[0..dollar];
-        const keys = body[dollar + 1 ..];
-
-        const colon = std.mem.indexOfScalar(u8, params, ':') orelse return error.MalformedVerifier;
-        const iterations = std.fmt.parseInt(u32, params[0..colon], 10) catch
-            return error.InvalidIterationCount;
-        if (iterations < 1) return error.InvalidIterationCount;
-
-        const key_colon = std.mem.indexOfScalar(u8, keys, ':') orelse return error.MalformedVerifier;
-
-        var self: Secret = undefined;
-        self.iterations = iterations;
-
-        const salt_len = b64.Decoder.calcSizeForSlice(params[colon + 1 ..]) catch
-            return error.InvalidBase64;
-        if (salt_len == 0) return error.SaltTooShort;
-        if (salt_len > max_salt_length) return error.SaltTooLong;
-        b64.Decoder.decode(self.salt_buf[0..salt_len], params[colon + 1 ..]) catch
-            return error.InvalidBase64;
-        @memset(self.salt_buf[salt_len..], 0);
-        self.salt_len = @intCast(salt_len);
-
-        try decodeKey(&self.stored_key, keys[0..key_colon]);
-        try decodeKey(&self.server_key, keys[key_colon + 1 ..]);
-        return self;
-    }
-
-    /// Recomputes the verifier from `password` using this secret's salt and
-    /// iteration count and compares in constant time.
-    pub fn verify(
-        self: *const Secret,
-        gpa: Allocator,
-        password: []const u8,
-        normalization: Normalization,
-    ) Error!bool {
-        const candidate = try compute(gpa, password, self.salt(), self.iterations, normalization);
-        return std.crypto.timing_safe.eql([key_length]u8, candidate.stored_key, self.stored_key) and
-            std.crypto.timing_safe.eql([key_length]u8, candidate.server_key, self.server_key);
-    }
-
-    pub fn eql(a: *const Secret, b: *const Secret) bool {
-        return a.iterations == b.iterations and
-            std.mem.eql(u8, a.salt(), b.salt()) and
-            std.crypto.timing_safe.eql([key_length]u8, a.stored_key, b.stored_key) and
-            std.crypto.timing_safe.eql([key_length]u8, a.server_key, b.server_key);
-    }
-};
-
-fn decodeKey(dest: *[key_length]u8, text: []const u8) ParseError!void {
-    const len = b64.Decoder.calcSizeForSlice(text) catch return error.InvalidBase64;
-    if (len != key_length) return error.InvalidKeyLength;
-    b64.Decoder.decode(dest, text) catch return error.InvalidBase64;
-}
-
-/// Derives a verifier from `password` and a caller-supplied salt. Deterministic
-/// — use this to reproduce an existing verifier or in tests; use `generate` for
-/// new passwords.
-///
-/// `gpa` is only touched when SASLprep has real work to do, which means never
-/// for an all-ASCII password or for `.raw`.
-pub fn compute(
-    gpa: Allocator,
-    password: []const u8,
-    salt: []const u8,
-    iterations: u32,
-    normalization: Normalization,
-) Error!Secret {
-    if (iterations < 1) return error.InvalidIterationCount;
-    if (salt.len == 0) return error.SaltTooShort;
-    if (salt.len > max_salt_length) return error.SaltTooLong;
-
-    const prepared: saslprep.Prepared = switch (normalization) {
-        .saslprep => try saslprep.prepOrRaw(gpa, password),
-        .raw => .{ .bytes = password, .owned = false },
-    };
-    defer prepared.deinit(gpa);
-
-    // dk is exactly one PRF block, so pbkdf2 can only fail on rounds == 0.
-    var salted_password: [key_length]u8 = undefined;
-    defer std.crypto.secureZero(u8, &salted_password);
-    std.crypto.pwhash.pbkdf2(&salted_password, prepared.bytes, salt, iterations, HmacSha256) catch
-        unreachable;
-
-    var client_key: [key_length]u8 = undefined;
-    defer std.crypto.secureZero(u8, &client_key);
-    HmacSha256.create(&client_key, "Client Key", &salted_password);
-
-    var self: Secret = undefined;
-    self.iterations = iterations;
-    @memcpy(self.salt_buf[0..salt.len], salt);
-    @memset(self.salt_buf[salt.len..], 0);
-    self.salt_len = @intCast(salt.len);
-    Sha256.hash(&client_key, &self.stored_key, .{});
-    HmacSha256.create(&self.server_key, "Server Key", &salted_password);
-    return self;
-}
-
-/// Derives a verifier from `password` with a fresh random salt drawn from `io`.
-/// This is the entry point for enrolling a new password.
-pub fn generate(gpa: Allocator, io: Io, password: []const u8, options: Options) Error!Secret {
-    if (options.salt_length == 0) return error.SaltTooShort;
-    if (options.salt_length > max_salt_length) return error.SaltTooLong;
-
-    var salt: [max_salt_length]u8 = undefined;
-    io.random(salt[0..options.salt_length]);
-    return compute(
-        gpa,
-        password,
-        salt[0..options.salt_length],
-        options.iterations,
-        options.normalization,
-    );
-}
+pub const key_length = ScramSha256.key_length;
+pub const default_iterations = ScramSha256.default_iterations;
+pub const default_salt_length = ScramSha256.default_salt_length;
+pub const max_salt_length = ScramSha256.max_salt_length;
+pub const max_encoded_length = ScramSha256.max_encoded_length;
+pub const prefix = ScramSha256.prefix;
+pub const name = ScramSha256.name;
+pub const plus_name = ScramSha256.plus_name;
 
 // -------------------------------------------------------------------------
 

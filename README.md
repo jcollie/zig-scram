@@ -17,6 +17,10 @@ client-side means `CREATE ROLE` / `ALTER ROLE` can be issued with the verifier
 in place of the password, so the plaintext never crosses the wire, never lands
 in the server log, and never reaches `pg_stat_activity`.
 
+It also speaks the protocol those verifiers are for: the four-message SCRAM
+exchange of [RFC 5802] and [RFC 7677], with channel binding, over any hash the
+RFCs name.
+
 ```sql
 ALTER ROLE alice PASSWORD 'SCRAM-SHA-256$4096:AAECAwQFBgcICQoLDA0ODw==$...';
 ```
@@ -138,6 +142,111 @@ const secret = try scram.compute(gpa, password, salt, 4096, .saslprep);
 The allocator is only touched when SASLprep has real work to do, which means
 never for an all-ASCII password and never for `.raw`.
 
+## Authenticating
+
+`Client` is the client half of the exchange, as a state machine with no
+transport in it: you hand it what arrived and send what it hands back. It never
+opens a socket and never touches TLS.
+
+```zig
+var client: scram.Client = try .init(gpa, io, .{
+    .username = "user",
+    .password = "pencil",
+});
+defer client.deinit();
+
+try conn.send(client.clientFirst());
+try client.handleServerFirst(try conn.receive());
+try conn.send(try client.clientFinal());
+try client.handleServerFinal(try conn.receive());
+```
+
+Both ends prove themselves. Returning from that last call is what
+authenticates the **server** — it has shown it knows `ServerKey`, which only
+the holder of the verifier does. A client that sends its proof and then treats
+the connection as good without getting there has proved itself to a stranger
+and learned nothing in return.
+
+Every slice handed back is owned by the `Client` and lives until `deinit`;
+every slice passed in is copied if it is needed later, so your buffers are free
+immediately. The password is wiped as soon as the key schedule has run, and the
+keys as soon as the proofs are computed.
+
+`Client.Options`:
+
+| field | default | |
+|---|---|---|
+| `username` | — | May be empty. PostgreSQL sends `n=,` because libpq has already named the user in the startup packet. |
+| `password` | — | |
+| `authzid` | `null` | The authorization identity, when it differs from the authentication one. |
+| `channel_binding` | `.none` | See below. |
+| `normalization` | `.saslprep` | Applied to the username and authzid as well as the password. |
+| `nonce_length` | `24` | Random bytes to draw; the nonce is sent as base64 of them. |
+| `nonce` | `null` | Use this nonce verbatim. Only for reproducing published vectors. |
+| `minimum_iterations` | `4096` | Refuse a server that asks for fewer rounds than this, which RFC 7677 §4 makes the floor. |
+
+### Channel binding
+
+Set `channel_binding` and the mechanism to negotiate becomes
+`SCRAM-SHA-256-PLUS`; `client.mechanism()` returns whichever name applies.
+
+```zig
+var client: scram.Client = try .init(gpa, io, .{
+    .username = "user",
+    .password = "pencil",
+    .channel_binding = .{ .bound = .{
+        .type = "tls-server-end-point",
+        .data = cert_hash,          // you compute this from your TLS stack
+    } },
+});
+```
+
+The binding data is a property of the TLS connection, not of SCRAM, so it is
+passed in rather than derived here — which means `tls-server-end-point`,
+`tls-exporter` and `tls-unique` all work without this library depending on a
+TLS implementation.
+
+The three variants are not preferences. They are assertions about what the
+server advertised, and the server checks them:
+
+| | |
+|---|---|
+| `.none` | This client does not support channel binding. |
+| `.unsupported_by_server` | It does, but the server's mechanism list had no `-PLUS` variant. If that list was tampered with, the server knows what it really advertised and will abort. |
+| `.bound` | Bind the exchange to the transport. |
+
+### Other hashes
+
+RFC 5802 defines SCRAM generically and instantiates it once, as SCRAM-SHA-1;
+RFC 7677 instantiates it again as SCRAM-SHA-256, changing nothing but the hash.
+`Mechanism(Hash)` is that parameter made explicit, and `scram` is
+`Mechanism(Sha256)` under a shorter name.
+
+```zig
+const ScramSha1 = scram.ScramSha1;              // RFC 5802's own
+const ScramSha512 = scram.Mechanism(std.crypto.hash.sha2.Sha512);
+
+var client: ScramSha1.Client = try .init(gpa, io, .{ ... });
+```
+
+A hash with no registered mechanism name is a compile error rather than a
+guess, since the name is what the two ends use to agree on what they are
+running. SHA-1, SHA-224, SHA-256, SHA-384, SHA-512 and SHA3-512 are accepted.
+
+### Errors
+
+`handleServerFirst` rejects a server whose nonce does not extend the client's
+(`error.NonceMismatch`) and one asking for too few rounds
+(`error.IterationCountTooLow`). `handleServerFinal` returns
+`error.ServerSignatureMismatch` when the server cannot prove itself, and
+`error.AuthenticationFailed` when it answered `e=` — `client.serverError()`
+then says which of RFC 5802's error values it sent, for the log.
+
+Message parsing follows the ABNF rather than accepting anything that could be
+understood: attributes must arrive in the order the grammar lists them, and an
+`m=` attribute fails the exchange wherever it appears, because it marks an
+extension the receiver is required to understand.
+
 ## CLI
 
 The package also builds a small tool. It reads the password from stdin by
@@ -257,9 +366,16 @@ zig build --system "$(nix build --print-out-paths .#zig-deps)"
 zig build test
 ```
 
-The suite includes the [RFC 7677] §3 test vector. The client proof and server
-signature published in that RFC are derived from this StoredKey and ServerKey,
-so matching it pins the entire derivation chain.
+The suite replays both published transcripts end to end — [RFC 7677] §3 for
+SCRAM-SHA-256 and [RFC 5802] §5 for SCRAM-SHA-1 — checking every message the
+client emits byte for byte, including the proof and the verification of the
+server's signature. Between them they pin the whole derivation chain and the
+whole wire format, under two different hashes.
+
+The proof is also checked the way a server checks it, from a stored `Secret`
+alone: recover `ClientKey` by undoing the XOR, hash it, and compare against
+`StoredKey`. That runs against a verifier derived independently of the code
+that built the proof.
 
 Both halves have also been checked differentially against independent
 implementations. Those runs were one-off validations rather than part of the
@@ -276,7 +392,9 @@ suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 
 | file | |
 |---|---|
-| `src/scram.zig` | Key derivation, the `Secret` type, parsing and rendering. |
+| `src/scram.zig` | SCRAM-SHA-256: the `Secret` and `Client` everything else aliases. |
+| `src/mechanism.zig` | `Mechanism(Hash)` — the key schedule, the verifier, the client state machine. |
+| `src/messages.zig` | The RFC 5802 message grammar and the GS2 header. |
 | `src/saslprep.zig` | RFC 4013, following PostgreSQL's implementation. |
 | `src/nfkc.zig` | NFKC (UAX #15) over uucode's character data. |
 | `src/stringprep_tables.zig` | RFC 3454 range tables, transcribed from `saslprep.c`. |
@@ -305,4 +423,5 @@ License asks for its notice in distributions.
 
 [REUSE]: https://reuse.software/
 [RFC 4013]: https://www.rfc-editor.org/rfc/rfc4013
+[RFC 5802]: https://www.rfc-editor.org/rfc/rfc5802
 [RFC 7677]: https://www.rfc-editor.org/rfc/rfc7677
