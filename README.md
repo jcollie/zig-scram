@@ -250,7 +250,9 @@ var client: ScramSha1.Client = try .init(gpa, io, .{ ... });
 
 A hash with no registered mechanism name is a compile error rather than a
 guess, since the name is what the two ends use to agree on what they are
-running. SHA-1, SHA-224, SHA-256, SHA-384, SHA-512 and SHA3-512 are accepted.
+running. SHA-1, SHA-224, SHA-256, SHA-384, SHA-512 and SHA3-512 are accepted;
+[References cited](#references-cited) says where each of those names comes
+from.
 
 ### Errors
 
@@ -431,6 +433,58 @@ The **server** half of the exchange. `Secret` holds exactly what a server needs
 and `src/messages.zig` has the grammar, so it is mostly message-writing, but
 nothing here accepts an exchange rather than initiating one.
 
+## References cited
+
+Everything this implementation is answerable to. The note on each says what
+this project takes from it, not what the document is about.
+
+### The mechanism
+
+| | |
+|---|---|
+| [RFC 5802] | *Salted Challenge Response Authentication Mechanism (SCRAM) SASL and GSS-API Mechanisms.* The exchange, the message ABNF, the key schedule, the `e=` error values — and SCRAM-SHA-1, its own instantiation. |
+| [RFC 7677] | *SCRAM-SHA-256 and SCRAM-SHA-256-PLUS.* The default here, and where §4's floor of 4096 iterations comes from. |
+| [RFC 5801] | *GSS-API Mechanisms in SASL: The GS2 Mechanism Family.* The `gs2-header` — the channel-binding flag and authorization identity that open the client's first message and reappear inside `c=`. |
+| [RFC 4422] | *Simple Authentication and Security Layer (SASL).* The framework SCRAM is a mechanism of: what authentication and authorization identities are, and how a mechanism comes to be chosen. |
+| [draft-melnikov-scram-sha-512] | SCRAM-SHA-512. An expired Internet-Draft. |
+| [draft-melnikov-scram-sha3-512] | SCRAM-SHA3-512, likewise — and the one that has to exist, because SHA-3 has no entry in the hash-name registry below, so its mechanism name cannot be derived and must be specified outright. |
+
+### Preparing passwords and usernames
+
+| | |
+|---|---|
+| [RFC 4013] | *SASLprep: Stringprep Profile for User Names and Passwords.* What `src/saslprep.zig` implements. Formally obsolete — see [RFC 8265] below. |
+| [RFC 3454] | *Preparation of Internationalized Strings ("stringprep").* The framework SASLprep is a profile of, and the source of the range tables in `src/stringprep_tables.zig`. |
+| [UAX #15] | *Unicode Normalization Forms.* NFKC, the normalization step. |
+| [RFC 3629] | *UTF-8.* stringprep is defined over UTF-8, and a password that is not valid UTF-8 is one of the things that triggers the fallback to raw bytes. |
+| [RFC 8265] | *PRECIS Profiles for Usernames and Passwords.* Obsoletes RFC 7613, which obsoleted RFC 4013 — so SASLprep has been superseded twice over. Listed because it is deliberately **not** implemented: RFC 7677 still specifies SASLprep and PostgreSQL still uses it, and a verifier that disagrees with the server is worthless however current its string preparation is. |
+
+### Channel binding
+
+| | |
+|---|---|
+| [RFC 5056] | *On the Use of Channel Bindings to Secure Channels.* What a channel binding is and what attack it closes. |
+| [RFC 5929] | *Channel Bindings for TLS.* `tls-unique` and `tls-server-end-point`. |
+| [RFC 9266] | *Channel Bindings for TLS 1.3.* `tls-exporter`, which is the binding to use over TLS 1.3, where `tls-unique` is not defined. |
+
+### Primitives
+
+| | |
+|---|---|
+| [RFC 2104] | HMAC. |
+| [RFC 8018] | PKCS #5 v2.1 — PBKDF2, the salted iteration that turns a password into `SaltedPassword`. |
+| [FIPS 180-4] | SHA-1 and the SHA-2 family. |
+| [FIPS 202] | SHA-3. |
+| [RFC 4648] | Base64, which every binary field on the wire and in a verifier is encoded with. |
+
+### IANA registries
+
+| | |
+|---|---|
+| [SASL Mechanisms] | Registered as the family `SCRAM-*`, so there is no individual `SCRAM-SHA-256` row to look up. |
+| [Hash Function Textual Names] | `sha-1`, `sha-224`, `sha-256`, `sha-384`, `sha-512`, and nothing else. RFC 5802 §4 builds a mechanism name by prefixing one of these with `SCRAM-`, which is exactly the set `Mechanism(Hash)` accepts without a draft to point at. |
+| [Channel-Binding Types] | The `cb-name` values that may follow `p=`. |
+
 ## License
 
 MIT, with one exception: `src/stringprep_tables.zig` is `MIT AND PostgreSQL`,
@@ -452,6 +506,25 @@ own MIT license. Nothing to do when consuming this as source, but the Unicode
 License asks for its notice in distributions.
 
 [REUSE]: https://reuse.software/
+[RFC 2104]: https://www.rfc-editor.org/rfc/rfc2104
+[RFC 3454]: https://www.rfc-editor.org/rfc/rfc3454
+[RFC 3629]: https://www.rfc-editor.org/rfc/rfc3629
 [RFC 4013]: https://www.rfc-editor.org/rfc/rfc4013
+[RFC 4422]: https://www.rfc-editor.org/rfc/rfc4422
+[RFC 4648]: https://www.rfc-editor.org/rfc/rfc4648
+[RFC 5056]: https://www.rfc-editor.org/rfc/rfc5056
+[RFC 5801]: https://www.rfc-editor.org/rfc/rfc5801
 [RFC 5802]: https://www.rfc-editor.org/rfc/rfc5802
+[RFC 5929]: https://www.rfc-editor.org/rfc/rfc5929
 [RFC 7677]: https://www.rfc-editor.org/rfc/rfc7677
+[RFC 8018]: https://www.rfc-editor.org/rfc/rfc8018
+[RFC 8265]: https://www.rfc-editor.org/rfc/rfc8265
+[RFC 9266]: https://www.rfc-editor.org/rfc/rfc9266
+[UAX #15]: https://www.unicode.org/reports/tr15/
+[FIPS 180-4]: https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+[FIPS 202]: https://csrc.nist.gov/pubs/fips/202/final
+[draft-melnikov-scram-sha-512]: https://datatracker.ietf.org/doc/draft-melnikov-scram-sha-512/
+[draft-melnikov-scram-sha3-512]: https://datatracker.ietf.org/doc/draft-melnikov-scram-sha3-512/
+[SASL Mechanisms]: https://www.iana.org/assignments/sasl-mechanisms/
+[Hash Function Textual Names]: https://www.iana.org/assignments/hash-function-text-names/
+[Channel-Binding Types]: https://www.iana.org/assignments/channel-binding-types/

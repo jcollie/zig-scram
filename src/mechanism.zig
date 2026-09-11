@@ -78,9 +78,15 @@ fn mechanismName(comptime Hash: type) []const u8 {
     const sha2 = std.crypto.hash.sha2;
     const sha3 = std.crypto.hash.sha3;
     // SCRAM-SHA-1 is RFC 5802's own instantiation and SCRAM-SHA-256 is RFC
-    // 7677; SCRAM-SHA-512 and SCRAM-SHA3-512 come from
-    // draft-melnikov-scram-sha-512. SHA-224 and SHA-384 have no RFC of their
-    // own but their names follow mechanically from section 4.
+    // 7677. The rest of the SHA-2 names need no document of their own: section
+    // 4 builds a mechanism name by prefixing `SCRAM-` to an entry in IANA's
+    // "Hash Function Textual Names" registry, and that registry holds sha-1,
+    // sha-224, sha-256, sha-384 and sha-512 and nothing else.
+    //
+    // SHA-3 is the exception, precisely because it is not in that registry:
+    // its name cannot be derived and has to be specified, which
+    // draft-melnikov-scram-sha3-512 does. (There is a matching draft for
+    // SCRAM-SHA-512, but that name follows from the registry regardless.)
     if (Hash == std.crypto.hash.Sha1) return "SCRAM-SHA-1";
     if (Hash == sha2.Sha224) return "SCRAM-SHA-224";
     if (Hash == sha2.Sha256) return "SCRAM-SHA-256";
