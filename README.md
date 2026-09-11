@@ -26,7 +26,7 @@ Requires Zig 0.16.0.
 ## Install
 
 ```sh
-zig fetch --save git+https://codeberg.org/jcollie/zig-scram-sha-256.git
+zig fetch --save git+https://git.jcollie.dev/jeff/zig-scram-sha-256.git
 ```
 
 ```zig
@@ -42,6 +42,14 @@ The only dependency is [uucode], for the Unicode character data behind the
 SASLprep step. It is built with just the four fields this module reads.
 
 [uucode]: https://github.com/jacobsandlund/uucode
+
+## Where this lives
+
+The canonical repository is on my Forgejo instance:
+
+```sh
+git clone https://git.jcollie.dev/jeff/zig-scram-sha-256.git
+```
 
 ## Cloning with Radicle
 
@@ -61,7 +69,8 @@ rad clone rad:z3p1EVd76fZgybgAPzCpM25LAUCwP
 
 `clone` consults your node's routing table to find a seed holding the
 repository, so no host has to be named. The default branch is `main`, the same
-history you would get from Codeberg. To help keep it available, seed it:
+history you would get from the Forgejo instance. To help keep it available,
+seed it:
 
 ```sh
 rad seed rad:z3p1EVd76fZgybgAPzCpM25LAUCwP

@@ -44,7 +44,7 @@ stdenv.mkDerivation (finalAttrs: {
 
   meta = {
     description = "Compute PostgreSQL SCRAM-SHA-256 password verifiers in Zig";
-    homepage = "https://codeberg.org/jcollie/zig-scram-sha-256";
+    homepage = "https://git.jcollie.dev/jeff/zig-scram-sha-256";
     license = lib.licenses.mit;
     mainProgram = "scram-sha-256";
     platforms = lib.platforms.all;
