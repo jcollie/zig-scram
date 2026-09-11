@@ -36,7 +36,6 @@ pub fn contains(ranges: []const Range, cp: u21) bool {
     return false;
 }
 
-
 /// C.1.2 Non-ASCII space characters. Mapped to U+0020 by the mapping step.
 pub const non_ascii_space: []const Range = &.{
     .{ .first = 0x00A0, .last = 0x00A0 },
