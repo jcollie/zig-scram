@@ -5,20 +5,30 @@ SPDX-License-Identifier: MIT
 
 # zig-scram
 
-SCRAM in Zig: the authentication exchange of [RFC 5802] and [RFC 7677], with
-channel binding, over any hash those RFCs name — and the password verifiers it
-authenticates against.
+SCRAM in Zig — [RFC 5802] and [RFC 7677]: the four-message authentication
+exchange, channel binding, and the password verifiers it authenticates
+against, over any hash those RFCs name.
 
-A verifier is what a server stores instead of a password:
+It is a library first, with a small CLI alongside it for the one job that is
+awkward to do any other way: computing a PostgreSQL verifier by hand.
+
+| | |
+|---|---|
+| `scram.Client` | The client half of the exchange, as a state machine with no transport in it. |
+| `scram.Secret` | A verifier — what a server stores instead of a password. |
+| `scram.Mechanism(Hash)` | The same thing over some other hash; `scram` is `Mechanism(Sha256)`. |
+| `scram.saslprep` | RFC 4013, which SCRAM runs over a password before hashing it. |
+
+A verifier is the half of SCRAM that PostgreSQL puts in front of its users:
 
 ```
 SCRAM-SHA-256$<iterations>:<base64 salt>$<base64 StoredKey>:<base64 ServerKey>
 ```
 
-That spelling is PostgreSQL's, the string it keeps in `pg_authid.rolpassword`.
-Computing it client-side means `CREATE ROLE` / `ALTER ROLE` can be issued with
-the verifier in place of the password, so the plaintext never crosses the wire,
-never lands in the server log, and never reaches `pg_stat_activity`.
+That is the string it keeps in `pg_authid.rolpassword`. Computing it
+client-side means `CREATE ROLE` / `ALTER ROLE` can be issued with the verifier
+in place of the password, so the plaintext never crosses the wire, never lands
+in the server log, and never reaches `pg_stat_activity`.
 
 ```sql
 ALTER ROLE alice PASSWORD 'SCRAM-SHA-256$4096:AAECAwQFBgcICQoLDA0ODw==$...';
@@ -54,11 +64,9 @@ The canonical repository is on my Forgejo instance:
 git clone https://git.jcollie.dev/jeff/zig-scram.git
 ```
 
-## Cloning with Radicle
-
-The repository is also published on [Radicle], a peer-to-peer network where a
-repository has no canonical host — it lives on whichever nodes choose to seed
-it. Its Repository ID is:
+It is also published on [Radicle], a peer-to-peer network where a repository
+has no canonical host — it lives on whichever nodes choose to seed it. Its
+Repository ID is:
 
 ```
 rad:z3p1EVd76fZgybgAPzCpM25LAUCwP
@@ -86,7 +94,7 @@ sending patches without a forge account.
 [Radicle]: https://radicle.xyz/
 [Radicle node]: https://radicle.xyz/#get-started
 
-## Use
+## Verifiers
 
 ```zig
 const std = @import("std");
@@ -136,10 +144,19 @@ const secret = try scram.compute(gpa, password, salt, 4096, .saslprep);
 |---|---|---|
 | `iterations` | `4096` | PBKDF2 rounds. PostgreSQL 16+ exposes this as the `scram_iterations` GUC. |
 | `salt_length` | `16` | Random salt bytes, up to `max_salt_length` (64). |
-| `normalization` | `.saslprep` | See below. |
+| `normalization` | `.saslprep` | See [SASLprep](#saslprep). |
 
 The allocator is only touched when SASLprep has real work to do, which means
 never for an all-ASCII password and never for `.raw`.
+
+A `Secret` holds no secret material: the plaintext cannot be recovered from it.
+It is still enough to impersonate the *server* to a client, though, so a
+verifier is sensitive even where it is not a password.
+
+The text format is PostgreSQL's. The RFCs describe what a server has to know,
+not how to write it down, so while `ScramSha1.Secret` renders the same shape
+under a `SCRAM-SHA-1$` tag, only the SHA-256 spelling is a string PostgreSQL
+will accept.
 
 ## Authenticating
 
@@ -184,10 +201,13 @@ keys as soon as the proofs are computed.
 | `nonce` | `null` | Use this nonce verbatim. Only for reproducing published vectors. |
 | `minimum_iterations` | `4096` | Refuse a server that asks for fewer rounds than this, which RFC 7677 §4 makes the floor. |
 
+`client.mechanism()` gives the name to negotiate, and `client.authenticated()`
+answers whether the exchange completed.
+
 ### Channel binding
 
 Set `channel_binding` and the mechanism to negotiate becomes
-`SCRAM-SHA-256-PLUS`; `client.mechanism()` returns whichever name applies.
+`SCRAM-SHA-256-PLUS`.
 
 ```zig
 var client: scram.Client = try .init(gpa, io, .{
@@ -246,40 +266,6 @@ understood: attributes must arrive in the order the grammar lists them, and an
 `m=` attribute fails the exchange wherever it appears, because it marks an
 extension the receiver is required to understand.
 
-## CLI
-
-The package also builds a small tool. It reads the password from stdin by
-default, since `-p` puts it in the process table where other users can see it.
-
-```console
-$ zig build
-$ printf 'hunter2' | ./zig-out/bin/scram-sha-256
-SCRAM-SHA-256$4096:zLU9phQvqg5BXTM1oxGFsQ==$NokuUG1vCRqy...:l/jd28uhQujg...
-
-$ ./zig-out/bin/scram-sha-256 --help
-```
-
-`-i/--iterations`, `-s/--salt-length`, `--raw`, and `--strict-prep` map onto the
-options above.
-
-### Shell completions
-
-`zig build install` writes fish and bash completions under the prefix, in the
-directories both shells already search:
-
-```console
-$ zig build install --prefix ~/.local
-$ ls ~/.local/share/fish/vendor_completions.d/scram-sha-256.fish
-$ ls ~/.local/share/bash-completion/completions/scram-sha-256
-```
-
-Both shells search `$XDG_DATA_HOME` (usually `~/.local/share`) and every prefix
-on `$XDG_DATA_DIRS`, so a prefix already on those paths needs no further setup.
-bash also needs the `bash-completion` package, which loads the file on demand
-the first time `scram-sha-256` is completed. Nothing searches `zig-out`, the
-default prefix, so either install to a real prefix or source the files from
-`completions/` directly.
-
 ## SASLprep
 
 SCRAM does not hash the password bytes directly. It hashes
@@ -311,6 +297,9 @@ whole point. Three behaviours are worth knowing about:
 - `.raw` — hash the bytes as given. Correct only if the caller has already
   prepared the password, or knows it is pure ASCII.
 
+RFC 5802 also says a client should prepare the *username*, so `Client` runs the
+same profile over `username` and `authzid`.
+
 To find out that a password *needed* the fallback rather than silently taking
 it, call `scram.saslprep.prep` directly; it returns `error.InvalidUtf8` or
 `error.Prohibited` instead. The CLI exposes this as `--strict-prep`.
@@ -326,6 +315,42 @@ in PostgreSQL 18.
 In practice this gap is unreachable: Unicode's normalization stability policy
 freezes a character's decomposition once assigned, so the versions can only
 disagree about characters that did not exist in the server's Unicode version.
+
+## The CLI
+
+`scram-sha-256` computes a PostgreSQL verifier and nothing else — it is named
+for the one mechanism whose stored format it writes, not for the library. It
+reads the password from stdin by default, since `-p` puts it in the process
+table where other users can see it.
+
+```console
+$ zig build
+$ printf 'hunter2' | ./zig-out/bin/scram-sha-256
+SCRAM-SHA-256$4096:zLU9phQvqg5BXTM1oxGFsQ==$NokuUG1vCRqy...:l/jd28uhQujg...
+
+$ ./zig-out/bin/scram-sha-256 --help
+```
+
+`-i/--iterations`, `-s/--salt-length`, `--raw`, and `--strict-prep` map onto the
+options above.
+
+### Shell completions
+
+`zig build install` writes fish and bash completions under the prefix, in the
+directories both shells already search:
+
+```console
+$ zig build install --prefix ~/.local
+$ ls ~/.local/share/fish/vendor_completions.d/scram-sha-256.fish
+$ ls ~/.local/share/bash-completion/completions/scram-sha-256
+```
+
+Both shells search `$XDG_DATA_HOME` (usually `~/.local/share`) and every prefix
+on `$XDG_DATA_DIRS`, so a prefix already on those paths needs no further setup.
+bash also needs the `bash-completion` package, which loads the file on demand
+the first time `scram-sha-256` is completed. Nothing searches `zig-out`, the
+default prefix, so either install to a real prefix or source the files from
+`completions/` directly.
 
 ## Nix
 
@@ -376,7 +401,7 @@ alone: recover `ClientKey` by undoing the XOR, hash it, and compare against
 `StoredKey`. That runs against a verifier derived independently of the code
 that built the proof.
 
-Both halves have also been checked differentially against independent
+The SASLprep half has been checked differentially against independent
 implementations. Those runs were one-off validations rather than part of the
 suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 
@@ -399,6 +424,12 @@ suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 | `src/stringprep_tables.zig` | RFC 3454 range tables, transcribed from `saslprep.c`. |
 | `src/main.zig` | The CLI. |
 | `completions/` | fish and bash completions for the CLI. |
+
+## What is not here
+
+The **server** half of the exchange. `Secret` holds exactly what a server needs
+and `src/messages.zig` has the grammar, so it is mostly message-writing, but
+nothing here accepts an exchange rather than initiating one.
 
 ## License
 
