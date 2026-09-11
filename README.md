@@ -210,6 +210,38 @@ In practice this gap is unreachable: Unicode's normalization stability policy
 freezes a character's decomposition once assigned, so the versions can only
 disagree about characters that did not exist in the server's Unicode version.
 
+## Nix
+
+The flake builds the CLI and provides the development shell this project is
+worked on in:
+
+```sh
+nix build            # the CLI, with its shell completions, into ./result
+nix run . -- --help
+nix develop          # zig, reuse, zon2nix, kcov and perf
+```
+
+A Nix build has no network, and `zig build` wants one to fetch uucode. The
+bridge is `build.zig.zon.nix`, generated from `build.zig.zon` by [zon2nix]: it
+evaluates to a directory laid out like Zig's package cache, which `package.nix`
+hands to `zig build --system`, so Nix fetches the dependency and the build
+itself fetches nothing. Adding, removing or updating a dependency means
+regenerating it — never editing it — so that every hash comes from the
+manifest:
+
+```sh
+nix develop -c zon2nix --16 --nix=build.zig.zon.nix build.zig.zon
+```
+
+The dependency directory is also a flake output of its own, for running
+`zig build` against something other than the package:
+
+```sh
+zig build --system "$(nix build --print-out-paths .#zig-deps)"
+```
+
+[zon2nix]: https://github.com/jcollie/zon2nix
+
 ## Testing
 
 ```sh

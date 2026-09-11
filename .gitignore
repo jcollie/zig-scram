@@ -7,3 +7,7 @@ zig-out/
 
 # Dependencies materialized from build.zig.zon by `zig fetch` / `zig build`.
 zig-pkg/
+
+# The symlink `nix build` leaves behind.
+result
+result-*

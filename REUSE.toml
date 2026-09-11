@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+# SPDX-License-Identifier: MIT
+
+version = 1
+
+# Files that cannot carry a header of their own: flake.lock is JSON, and
+# build.zig.zon.nix is written by zon2nix, which would drop anything added to
+# it by hand the next time a dependency moved.
+[[annotations]]
+path = ["flake.lock", "build.zig.zon.nix"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Jeffrey C. Ollie <jeff@ocjtech.us>"
+SPDX-License-Identifier = "MIT"
