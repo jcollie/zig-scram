@@ -11,31 +11,33 @@ on:
 
 jobs:
   test:
-    # One of Codeberg's hosted runners: 2 CPUs, 4G, and a 5 minute limit.
-    # See https://codeberg.org/actions/meta for the rest of the labels.
-    runs-on: codeberg-small
+    # An ephemeral DigitalOcean droplet running NixOS, so nix is already there
+    # and the toolchain comes from the flake rather than from an install step:
+    # one definition of what this project is built with, shared by the shell it
+    # is developed in and the job that checks it.
+    runs-on: nixos-do-s
 
     steps:
-      - uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out
+        uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Every file needs an SPDX header and every license a file in LICENSES/,
-      # which is easy to forget when adding one. reuse is a Python tool and the
-      # runner image ships pipx, so no install step of its own is needed. The
-      # major version is pinned so that a new REUSE specification cannot turn
-      # this red without a change here.
+      # which is easy to forget when adding one.
       - name: Check REUSE compliance
-        run: pipx run --spec 'reuse>=6,<7' reuse lint
+        run: nix develop -c reuse lint
 
-      # Codeberg resolves bare action names against code.forgejo.org, so this
-      # one needs its full URL. Both actions here are pinned to a commit rather
-      # than a tag: a tag can be moved, and these actions run with access to
-      # the checkout and the job's token. With no version input it installs the
-      # minimum_zig_version from build.zig.zon, which is the version worth
-      # testing against, and it caches Zig's global cache itself — that is
-      # where the uucode fetch and its generated Unicode tables live.
-      - uses: https://github.com/mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+      - name: Check Zig formatting compliance
+        run: nix develop -c zig fmt --check .
 
-      - name: Run the tests
-        run: |
-          zig version
-          zig build test --summary all
+      # As a developer runs them: the devshell's Zig, fetching uucode over the
+      # network the way `zig build` does outside of Nix.
+      - name: Test
+        run: nix develop -c zig build test --summary all
+
+      # And as Nix builds them: the package, with no network and uucode coming
+      # from the generated build.zig.zon.nix, so that a dependency added to
+      # build.zig.zon without regenerating that file fails here rather than at
+      # the next release. Its check phase runs the suite a second time, in the
+      # sandbox, and this also evaluates the devshell.
+      - name: Check the flake
+        run: nix flake check --print-build-logs
