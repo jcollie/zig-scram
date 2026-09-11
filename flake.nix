@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 {
-  description = "Compute PostgreSQL SCRAM-SHA-256 password verifiers in Zig";
+  description = "SCRAM (RFC 5802 / RFC 7677) in Zig, including PostgreSQL password verifiers";
 
   inputs = {
     nixpkgs = {
@@ -55,7 +55,7 @@
         in
         {
           default = pkgs.mkShell {
-            name = "zig-scram-sha-256";
+            name = "zig-scram";
             nativeBuildInputs = [
               pkgs.zig_0_16
               pkgs.reuse

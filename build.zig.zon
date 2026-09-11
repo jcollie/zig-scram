@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 .{
-    .name = .scram_sha_256,
+    .name = .scram,
     .version = "0.0.0",
-    .fingerprint = 0xaab88b8c9a44b44d, // Changing this has security and trust implications.
+    .fingerprint = 0x4953ced29a44b44d, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .uucode = .{

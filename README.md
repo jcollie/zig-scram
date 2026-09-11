@@ -3,23 +3,22 @@ SPDX-FileCopyrightText: 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 SPDX-License-Identifier: MIT
 -->
 
-# zig-scram-sha-256
+# zig-scram
 
-Compute PostgreSQL SCRAM-SHA-256 password verifiers in Zig, without sending the
-plaintext to the server.
+SCRAM in Zig: the authentication exchange of [RFC 5802] and [RFC 7677], with
+channel binding, over any hash those RFCs name — and the password verifiers it
+authenticates against.
+
+A verifier is what a server stores instead of a password:
 
 ```
 SCRAM-SHA-256$<iterations>:<base64 salt>$<base64 StoredKey>:<base64 ServerKey>
 ```
 
-This is the string PostgreSQL stores in `pg_authid.rolpassword`. Producing it
-client-side means `CREATE ROLE` / `ALTER ROLE` can be issued with the verifier
-in place of the password, so the plaintext never crosses the wire, never lands
-in the server log, and never reaches `pg_stat_activity`.
-
-It also speaks the protocol those verifiers are for: the four-message SCRAM
-exchange of [RFC 5802] and [RFC 7677], with channel binding, over any hash the
-RFCs name.
+That spelling is PostgreSQL's, the string it keeps in `pg_authid.rolpassword`.
+Computing it client-side means `CREATE ROLE` / `ALTER ROLE` can be issued with
+the verifier in place of the password, so the plaintext never crosses the wire,
+never lands in the server log, and never reaches `pg_stat_activity`.
 
 ```sql
 ALTER ROLE alice PASSWORD 'SCRAM-SHA-256$4096:AAECAwQFBgcICQoLDA0ODw==$...';
@@ -30,16 +29,16 @@ Requires Zig 0.16.0.
 ## Install
 
 ```sh
-zig fetch --save git+https://git.jcollie.dev/jeff/zig-scram-sha-256.git
+zig fetch --save git+https://git.jcollie.dev/jeff/zig-scram.git
 ```
 
 ```zig
 // build.zig
-const scram = b.dependency("scram_sha_256", .{
+const scram = b.dependency("scram", .{
     .target = target,
     .optimize = optimize,
 });
-exe.root_module.addImport("scram", scram.module("scram_sha_256"));
+exe.root_module.addImport("scram", scram.module("scram"));
 ```
 
 The only dependency is [uucode], for the Unicode character data behind the
@@ -52,7 +51,7 @@ SASLprep step. It is built with just the four fields this module reads.
 The canonical repository is on my Forgejo instance:
 
 ```sh
-git clone https://git.jcollie.dev/jeff/zig-scram-sha-256.git
+git clone https://git.jcollie.dev/jeff/zig-scram.git
 ```
 
 ## Cloning with Radicle

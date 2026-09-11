@@ -7,7 +7,7 @@
 const std = @import("std");
 const Io = std.Io;
 
-const scram = @import("scram_sha_256");
+const scram = @import("scram");
 
 const usage =
     \\usage: scram-sha-256 [options]
