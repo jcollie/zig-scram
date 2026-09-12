@@ -157,6 +157,15 @@ in
 copyFarm name
   [
     {
+      name = "sasl-0.0.0-s3YcOE2xAACI-WkU8zC34VATmQFMOwa1tisag_iCNyfy";
+      path = fetchZigArtifact {
+        name = "sasl";
+        url = "git+https://git.jcollie.dev/jeff/zig-sasl.git#07978907863fb7e38b17c930c7f4e9b194b3c4a6";
+        hash = "sha256-6nn2H73g14dHo2Vs1jTofzx3426wPGyV9MDAZF9jyPc=";
+        unpack = true;
+      };
+    }
+    {
       name = "uucode-0.2.0-ZZjBPh-6VADBlunHbwABTPng0DH6uJqd4CvvtjZ19tny";
       path = fetchZigArtifact {
         name = "uucode";

@@ -11,6 +11,10 @@
             .url = "git+https://github.com/jacobsandlund/uucode#61e54266895f833b307de81a0e3038cf1f1bebd4",
             .hash = "uucode-0.2.0-ZZjBPh-6VADBlunHbwABTPng0DH6uJqd4CvvtjZ19tny",
         },
+        .sasl = .{
+            .url = "git+https://git.jcollie.dev/jeff/zig-sasl.git#07978907863fb7e38b17c930c7f4e9b194b3c4a6",
+            .hash = "sasl-0.0.0-s3YcOE2xAACI-WkU8zC34VATmQFMOwa1tisag_iCNyfy",
+        },
     },
     .paths = .{
         "build.zig",

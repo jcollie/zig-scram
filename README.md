@@ -275,6 +275,37 @@ understood: attributes must arrive in the order the grammar lists them, and an
 `m=` attribute fails the exchange wherever it appears, because it marks an
 extension the receiver is required to understand.
 
+## As a SASL mechanism
+
+SCRAM is a SASL mechanism, and a protocol library should be able to run it
+without knowing what SCRAM is. `src/sasl.zig` is that adapter, exposed as a
+separate module, `scram-sasl`, so that `scram` itself keeps no dependency on
+[zig-sasl](https://git.jcollie.dev/jeff/zig-sasl) and only something that
+wants to hand SCRAM to an SMTP, POP3 or IMAP client pays for it.
+
+```zig
+var inner: scram.Client = try .init(gpa, io, .{ .username = "user", .password = "pencil" });
+defer inner.deinit();
+var adapter: scram_sasl.Sha256 = .init(&inner, scram.ScramSha256.name);
+try client.authenticate(adapter.client());   // the protocol library's call
+```
+
+The adapter's whole job is a mapping. SCRAM is four messages —
+`client-first`, `server-first`, `client-final`, `server-final` — and none of
+SMTP, POP3 or IMAP can carry data alongside a successful outcome, which
+RFC 4954 states outright and which IMAP's tagged `OK` does not change. So
+`server-final` arrives as one more challenge and is answered with an empty
+response before the protocol reports success.
+
+That last exchange is where the server proves it knows `ServerKey`, so a
+client that treats the protocol's success as the end of the story has
+verified nothing. The adapter reports `satisfied() == false` until
+`handleServerFinal` has run, and a caller that checks it cannot make that
+mistake. The errors divide three ways, which is the distinction worth
+keeping: a signature that does not verify is `BadServerProof` — an accusation
+about the peer — where an `e=` is `Rejected`, a well-formed message from a
+server doing nothing wrong, and anything else is `BadChallenge`.
+
 ## SASLprep
 
 SCRAM does not hash the password bytes directly. It hashes
@@ -431,6 +462,7 @@ suite, since they need a Python interpreter and a copy of PostgreSQL's source:
 | `src/saslprep.zig` | RFC 4013, following PostgreSQL's implementation. |
 | `src/nfkc.zig` | NFKC (UAX #15) over uucode's character data. |
 | `src/stringprep_tables.zig` | RFC 3454 range tables, transcribed from `saslprep.c`. |
+| `src/sasl.zig` | SCRAM as a zig-sasl mechanism, in its own `scram-sasl` module. |
 | `src/main.zig` | The CLI. |
 | `completions/` | fish and bash completions for the CLI. |
 

@@ -28,6 +28,23 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("uucode", uucode.module("uucode"));
 
+    // SCRAM as a SASL mechanism, in a module of its own so that `scram`
+    // itself keeps no dependency on zig-sasl. Only something that wants to
+    // hand SCRAM to a protocol library pays for it.
+    const sasl = b.dependency("sasl", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const sasl_mod = b.addModule("scram-sasl", .{
+        .root_source_file = b.path("src/sasl.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "sasl", .module = sasl.module("sasl") },
+            .{ .name = "scram", .module = mod },
+        },
+    });
+
     const exe = b.addExecutable(.{
         .name = "scram-sha-256",
         .root_module = b.createModule(.{
@@ -60,6 +77,11 @@ pub fn build(b: *std.Build) void {
     });
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
+    const sasl_tests = b.addTest(.{
+        .root_module = sasl_mod,
+    });
+    const run_sasl_tests = b.addRunArtifact(sasl_tests);
+
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
@@ -67,5 +89,6 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
+    test_step.dependOn(&run_sasl_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 }
