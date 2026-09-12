@@ -91,8 +91,15 @@ Zig's package manager does not speak `rad://`, so `zig fetch` still wants the
 `git+https` URL above. Radicle is for getting the source, filing issues, and
 sending patches without a forge account.
 
+A mirror is kept on [Tangled], where the repository lives at:
+
+```
+https://tangled.org/jcollie.dev/zig-scram
+```
+
 [Radicle]: https://radicle.xyz/
 [Radicle node]: https://radicle.xyz/#get-started
+[Tangled]: https://tangled.org/
 
 ## Verifiers
 
