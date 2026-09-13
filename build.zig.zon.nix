@@ -157,11 +157,11 @@ in
 copyFarm name
   [
     {
-      name = "sasl-0.0.0-s3YcOE2xAACI-WkU8zC34VATmQFMOwa1tisag_iCNyfy";
+      name = "sasl-0.0.0-s3YcOMMUAgA7-HtfM-XSdyJoxdYCrrg-oG66c9qZHEcp";
       path = fetchZigArtifact {
         name = "sasl";
-        url = "git+https://git.jcollie.dev/jeff/zig-sasl.git#07978907863fb7e38b17c930c7f4e9b194b3c4a6";
-        hash = "sha256-6nn2H73g14dHo2Vs1jTofzx3426wPGyV9MDAZF9jyPc=";
+        url = "git+https://git.jcollie.dev/jeff/zig-sasl.git#ed616574a3f9842e1e6e25761d98bb78fc7e7292";
+        hash = "sha256-qPY/qDbrK2O/s+0GoZyqfVHSny9qqDA6u6jyh5v5pJw=";
         unpack = true;
       };
     }
