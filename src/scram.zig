@@ -67,6 +67,7 @@ pub const Client = ScramSha256.Client;
 pub const Keys = ScramSha256.Keys;
 pub const Options = ScramSha256.GenerateOptions;
 pub const Normalization = mechanism.Normalization;
+pub const PrepareError = mechanism.PrepareError;
 pub const ChannelBinding = messages.ChannelBinding;
 pub const Error = ScramSha256.Error;
 pub const DeriveError = ScramSha256.DeriveError;
@@ -186,6 +187,27 @@ test ".raw skips preparation" {
     const raw = try compute(testing.allocator, "\u{2168}", &test_salt, 4096, .raw);
     const prepped = try compute(testing.allocator, "IX", &test_salt, 4096, .saslprep);
     try testing.expect(!raw.eql(&prepped));
+}
+
+test ".rfc4013 prepares by the RFC and fails rather than falling back" {
+    // Where the profiles agree, so do the verifiers.
+    const rfc = try compute(testing.allocator, "\u{2168}", &test_salt, 4096, .rfc4013);
+    const pg = try compute(testing.allocator, "\u{2168}", &test_salt, 4096, .saslprep);
+    try testing.expect(rfc.eql(&pg));
+
+    // U+0340 is prohibited, and NFKC turns it into the permitted U+0300. The
+    // RFC checks after normalizing, so it hashes U+0300; PostgreSQL checks
+    // before, refuses it, and falls back to the raw bytes.
+    const tone = try compute(testing.allocator, "\u{0340}", &test_salt, 4096, .rfc4013);
+    const grave = try compute(testing.allocator, "\u{0300}", &test_salt, 4096, .raw);
+    try testing.expect(tone.eql(&grave));
+    const fallback = try compute(testing.allocator, "\u{0340}", &test_salt, 4096, .saslprep);
+    try testing.expect(!tone.eql(&fallback));
+
+    // What neither can prepare, the RFC refuses outright.
+    for ([_][]const u8{ "\xff\xfe", "a\tb", "a\u{2028}b" }) |password| {
+        try testing.expectError(error.Unpreparable, compute(testing.allocator, password, &test_salt, 4096, .rfc4013));
+    }
 }
 
 test "round trip through parse" {

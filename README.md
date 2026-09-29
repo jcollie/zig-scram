@@ -314,35 +314,55 @@ characters away, folds some to a space, normalizes to NFKC, and rejects the
 rest. Getting this wrong means the verifier silently disagrees with the server
 for any password outside ASCII.
 
-The implementation here follows PostgreSQL's `src/common/saslprep.c` rather
-than the RFC wherever the two differ, because agreeing with the server is the
-whole point. Three behaviours are worth knowing about:
+There are two profiles, because the implementations that matter disagree
+with the RFC.
 
-- **All-ASCII passwords short-circuit.** SASLprep is the identity on ASCII, so
-  the whole profile is skipped. This is also why an ASCII control character in a
-  password never trips the prohibited-output check, even though the table lists
-  it.
+**PostgreSQL's** is the default, from its `src/common/saslprep.c`, because
+agreeing with that server is what this library is mostly for. It departs from
+RFC 4013 in four places:
+
+- **All-ASCII passwords short-circuit.** SASLprep is the identity on printable
+  ASCII, so the whole profile is skipped. This is also why an ASCII control
+  character in a password never trips the prohibited-output check, even though
+  the table lists it.
 - **The prohibit and bidi checks run before normalization**, against the mapped
   string rather than the NFKC output, though RFC 3454 describes them as checks
-  on the output. PostgreSQL has always done it this way.
+  on the output. So U+0340, which is prohibited and which NFKC turns into the
+  permitted U+0300, is refused.
+- **A password that maps to nothing is refused**, where the RFC gives the
+  empty string.
 - **Failure falls back to the raw bytes.** If a password is not valid UTF-8, or
   contains a prohibited or Unicode-3.2-unassigned character, or breaks the
   bidirectional-text rules, both the server and libpq hash the unprepared bytes
   instead. `.saslprep` does the same.
 
-`Normalization` picks between that and doing nothing:
+**RFC 4013's** is the RFC as written, preparing a stored string, which is how
+RFC 5802 says SCRAM prepares a password. It checks the NFKC output, allows an
+empty result, and fails where preparation fails, as RFC 5802 requires of a
+client. It agrees with GNU libidn's SASLprep profile [libidn] on thousands of
+strings built from every class of character that matters here. Use it against
+a server that prepares strings by the RFC rather than as PostgreSQL does.
 
-- `.saslprep` (default) — full SASLprep with the PostgreSQL fallback. Reproduces
+Both map U+200B, which RFC 3454 puts both in the table mapped to a space and
+in the table mapped to nothing, to a space, as PostgreSQL and libidn do.
+
+`Normalization` picks between them, or neither:
+
+- `.saslprep` (default): PostgreSQL's profile, with its fallback. Reproduces
   the server's verifier for any password.
-- `.raw` — hash the bytes as given. Correct only if the caller has already
+- `.rfc4013`: RFC 4013's profile, failing with `error.Unpreparable` where it
+  fails.
+- `.raw`: hash the bytes as given. Correct only if the caller has already
   prepared the password, or knows it is pure ASCII.
 
 RFC 5802 also says a client should prepare the *username*, so `Client` runs the
 same profile over `username` and `authzid`.
 
-To find out that a password *needed* the fallback rather than silently taking
-it, call `scram.saslprep.prep` directly; it returns `error.InvalidUtf8` or
-`error.Prohibited` instead. The CLI exposes this as `--strict-prep`.
+To find out that a password *needed* PostgreSQL's fallback rather than
+silently taking it, call `scram.saslprep.prep` directly; it returns
+`error.InvalidUtf8` or `error.Prohibited` instead. The CLI exposes this as
+`--strict-prep`. `scram.saslprep.prepWith(gpa, password, .rfc4013)` is the RFC
+profile on its own.
 
 ### Unicode versions
 
@@ -351,6 +371,13 @@ the A.1 unassigned-code-point table stays frozen at Unicode 3.2 exactly as
 RFC 3454 specifies. Normalization, on the other hand, uses whatever Unicode
 version uucode ships — currently 17.0, against 15.1 in PostgreSQL 17 and 16.0
 in PostgreSQL 18.
+
+The RFC profile checks for unassigned code points *before* normalizing, where
+it checks everything else after. Under Unicode 3.2's NFKC, which RFC 3454
+specifies, a character that 3.2 did not have passes through unchanged and is
+then found unassigned. A later NFKC can turn it into assigned characters, as
+it turns U+1F100 into "0.", so checking before normalizing is what gives 3.2's
+answer.
 
 In practice this gap is unreachable: Unicode's normalization stability policy
 freezes a character's decomposition once assigned, so the versions can only
@@ -496,6 +523,7 @@ this project takes from it, not what the document is about.
 | [RFC 3454] | *Preparation of Internationalized Strings ("stringprep").* The framework SASLprep is a profile of, and the source of the range tables in `src/stringprep_tables.zig`. |
 | [UAX #15] | *Unicode Normalization Forms.* NFKC, the normalization step. |
 | [RFC 3629] | *UTF-8.* stringprep is defined over UTF-8, and a password that is not valid UTF-8 is one of the things that triggers the fallback to raw bytes. |
+| [libidn] | *GNU Libidn.* Its SASLprep profile, run as a stored string, is what the RFC 4013 profile was checked against. |
 | [RFC 8265] | *PRECIS Profiles for Usernames and Passwords.* Obsoletes RFC 7613, which obsoleted RFC 4013 — so SASLprep has been superseded twice over. Listed because it is deliberately **not** implemented: RFC 7677 still specifies SASLprep and PostgreSQL still uses it, and a verifier that disagrees with the server is worthless however current its string preparation is. |
 
 ### Channel binding
@@ -557,6 +585,7 @@ License asks for its notice in distributions.
 [RFC 5929]: https://www.rfc-editor.org/rfc/rfc5929
 [RFC 7677]: https://www.rfc-editor.org/rfc/rfc7677
 [RFC 8018]: https://www.rfc-editor.org/rfc/rfc8018
+[libidn]: https://www.gnu.org/software/libidn/
 [RFC 8265]: https://www.rfc-editor.org/rfc/rfc8265
 [RFC 9266]: https://www.rfc-editor.org/rfc/rfc9266
 [UAX #15]: https://www.unicode.org/reports/tr15/

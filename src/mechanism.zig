@@ -60,10 +60,26 @@ pub const Normalization = enum {
     /// agree with the peer, and every peer worth agreeing with does this.
     saslprep,
 
+    /// Apply SASLprep exactly as RFC 4013 has it, and fail with
+    /// `error.Unpreparable` where it fails, as RFC 5802 says a client must.
+    /// For a server that is not PostgreSQL and prepares strings by the RFC,
+    /// libidn's and GNU SASL's among them. It differs from `.saslprep` only
+    /// for a password with an ASCII control character, one that maps to
+    /// nothing, or one whose prohibited characters normalization removes.
+    rfc4013,
+
     /// Use the bytes as given. Correct only if the caller has already
     /// prepared them, or knows they are pure ASCII — on which SASLprep is the
     /// identity anyway.
     raw,
+};
+
+/// What preparing a string can fail with: only `.rfc4013` refuses anything.
+pub const PrepareError = Allocator.Error || error{
+    /// Under `.rfc4013`, the string is not valid UTF-8, holds a character
+    /// SASLprep prohibits or one unassigned in Unicode 3.2, or breaks the
+    /// bidirectional-text rules.
+    Unpreparable,
 };
 
 /// The SASL mechanism name for a hash, per RFC 5802 section 4: `SCRAM-`
@@ -153,7 +169,7 @@ pub fn Mechanism(comptime H: type) type {
             SaltTooLong,
         };
 
-        pub const Error = DeriveError || Allocator.Error;
+        pub const Error = DeriveError || PrepareError;
 
         pub const ParseError = error{
             /// The text does not start with `prefix`.
@@ -478,6 +494,9 @@ pub fn Mechanism(comptime H: type) type {
                 /// An explicitly supplied nonce was empty or contained
                 /// something outside the `printable` production.
                 InvalidNonce,
+                /// Under `.rfc4013`, the password, username or authorization
+                /// identity could not be prepared.
+                Unpreparable,
                 OutOfMemory,
             };
 
@@ -839,9 +858,13 @@ fn prepare(
     gpa: Allocator,
     input: []const u8,
     normalization: Normalization,
-) Allocator.Error!saslprep.Prepared {
+) PrepareError!saslprep.Prepared {
     return switch (normalization) {
         .saslprep => saslprep.prepOrRaw(gpa, input),
+        .rfc4013 => saslprep.prepWith(gpa, input, .rfc4013) catch |err| switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            error.InvalidUtf8, error.Prohibited => error.Unpreparable,
+        },
         .raw => .{ .bytes = input, .owned = false },
     };
 }

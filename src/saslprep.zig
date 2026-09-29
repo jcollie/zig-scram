@@ -4,16 +4,29 @@
 //! SASLprep ([RFC 4013]), the stringprep profile SCRAM applies to a password
 //! before deriving keys from it.
 //!
-//! This follows PostgreSQL's `src/common/saslprep.c` rather than the RFC where
-//! the two differ, because the point of the module is to reproduce what the
-//! server stores. Two deliberate quirks come from there:
+//! There are two profiles, because the implementations that matter disagree
+//! with the RFC. `prep` is PostgreSQL's, from its `src/common/saslprep.c`,
+//! since reproducing what that server stores is what this module is mostly
+//! for. It differs from RFC 4013 in three places:
 //!
 //!   * An all-ASCII password is returned untouched, skipping every step. That
-//!     is sound — SASLprep is the identity on ASCII — and it is also why an
-//!     ASCII control character never trips the prohibited-output check.
+//!     is sound for printable ASCII, since SASLprep is the identity on it. It
+//!     is also why an ASCII control character never trips the
+//!     prohibited-output check.
 //!   * The prohibit and bidi checks run against the *mapped* string, before
 //!     normalization, even though RFC 3454 describes them as checks on the
-//!     output. PostgreSQL has always done it this way.
+//!     output. So U+0340, which is prohibited and which NFKC turns into the
+//!     permitted U+0300, is refused.
+//!   * A password that maps to nothing at all is refused.
+//!
+//! `prepWith(..., .rfc4013)` is the RFC as written, for a stored string,
+//! which is how RFC 5802 says SCRAM prepares a password: all four steps, in
+//! order, with the prohibit and bidi checks on the normalized output. It
+//! agrees with GNU libidn's SASLprep profile with `STRINGPREP_NO_UNASSIGNED`.
+//!
+//! Both profiles map U+200B, which RFC 3454 lists in both the table mapped to
+//! a space (C.1.2) and the table mapped to nothing (B.1), to a space, as
+//! PostgreSQL and libidn both do.
 //!
 //! [RFC 4013]: https://www.rfc-editor.org/rfc/rfc4013
 
@@ -44,9 +57,36 @@ pub const Prepared = struct {
     }
 };
 
-/// Runs SASLprep over `input`.
+/// Which implementation's reading of SASLprep to follow.
+pub const Profile = enum {
+    /// PostgreSQL's, which reproduces the verifier its server stores. See
+    /// the top of this file for where it departs from the RFC.
+    postgresql,
+    /// RFC 4013 as written, preparing a stored string, as RFC 5802 asks of
+    /// SCRAM: characters unassigned in Unicode 3.2 are refused, and the
+    /// prohibit and bidi checks run on the normalized output.
+    rfc4013,
+};
+
+/// Runs SASLprep over `input` the way PostgreSQL does.
 pub fn prep(gpa: Allocator, input: []const u8) Error!Prepared {
-    if (isAscii(input)) return .{ .bytes = input, .owned = false };
+    return prepWith(gpa, input, .postgresql);
+}
+
+/// Runs SASLprep over `input` under `profile`.
+pub fn prepWith(gpa: Allocator, input: []const u8, profile: Profile) Error!Prepared {
+    if (isAscii(input)) switch (profile) {
+        .postgresql => return .{ .bytes = input, .owned = false },
+        // Printable ASCII is its own SASLprep: nothing in it is mapped,
+        // NFKC leaves it alone, it has no right-to-left characters, and none
+        // of it is prohibited. The control characters are prohibited.
+        .rfc4013 => {
+            for (input) |byte| {
+                if (byte < 0x20 or byte == 0x7f) return error.Prohibited;
+            }
+            return .{ .bytes = input, .owned = false };
+        },
+    };
 
     const decoded = try decode(gpa, input);
     defer gpa.free(decoded);
@@ -66,28 +106,68 @@ pub fn prep(gpa: Allocator, input: []const u8) Error!Prepared {
         }
     }
     const mapped = decoded[0..len];
-    if (mapped.len == 0) return error.Prohibited;
 
-    // Step 2: normalize to NFKC.
-    const normalized = try nfkc.normalize(gpa, mapped);
-    defer gpa.free(normalized);
+    switch (profile) {
+        .postgresql => {
+            if (mapped.len == 0) return error.Prohibited;
 
-    // Step 3: prohibited output, and code points unassigned in Unicode 3.2.
-    for (mapped) |cp| {
-        if (tables.contains(tables.prohibited_output, cp)) return error.Prohibited;
+            // Step 2: normalize to NFKC.
+            const normalized = try nfkc.normalize(gpa, mapped);
+            defer gpa.free(normalized);
+
+            // Steps 3 and 4, on the mapped string as PostgreSQL checks them.
+            try checkUnassigned(mapped);
+            try checkProhibited(mapped);
+            try checkBidi(mapped);
+
+            return .{ .bytes = try encode(gpa, normalized), .owned = true };
+        },
+        .rfc4013 => {
+            // Unassigned code points first, on the mapped string. RFC 3454
+            // normalizes with Unicode 3.2's tables, under which a character
+            // that 3.2 did not have is left alone and then found unassigned.
+            // uucode's NFKC is a later Unicode's, which may turn such a
+            // character into assigned ones -- U+1F100 into "0." -- and
+            // checking before normalization gives 3.2's answer.
+            try checkUnassigned(mapped);
+
+            // Step 2: normalize to NFKC.
+            const normalized = try nfkc.normalize(gpa, mapped);
+            defer gpa.free(normalized);
+
+            // Steps 3 and 4, on the output, where RFC 3454 puts them.
+            try checkProhibited(normalized);
+            try checkBidi(normalized);
+
+            return .{ .bytes = try encode(gpa, normalized), .owned = true };
+        },
+    }
+}
+
+/// Code points unassigned in Unicode 3.2 (RFC 3454 table A.1), which a
+/// stored string may not contain.
+fn checkUnassigned(cps: []const u21) Error!void {
+    for (cps) |cp| {
         if (tables.contains(tables.unassigned, cp)) return error.Prohibited;
     }
+}
 
-    // Step 4: bidirectional text. A string containing any RandALCat character
-    // may not contain an LCat character, and must both start and end with a
-    // RandALCat character. (RFC 3454 section 6.)
-    if (containsAny(tables.rand_al_cat, mapped)) {
-        if (containsAny(tables.l_cat, mapped)) return error.Prohibited;
-        if (!tables.contains(tables.rand_al_cat, mapped[0])) return error.Prohibited;
-        if (!tables.contains(tables.rand_al_cat, mapped[mapped.len - 1])) return error.Prohibited;
+/// Step 3: prohibited output (RFC 4013 section 2.3).
+fn checkProhibited(cps: []const u21) Error!void {
+    for (cps) |cp| {
+        if (tables.contains(tables.prohibited_output, cp)) return error.Prohibited;
     }
+}
 
-    return .{ .bytes = try encode(gpa, normalized), .owned = true };
+/// Step 4: bidirectional text. A string containing any RandALCat character
+/// may not contain an LCat character, and must both start and end with a
+/// RandALCat character. (RFC 3454 section 6.)
+fn checkBidi(cps: []const u21) Error!void {
+    if (containsAny(tables.rand_al_cat, cps)) {
+        if (containsAny(tables.l_cat, cps)) return error.Prohibited;
+        if (!tables.contains(tables.rand_al_cat, cps[0])) return error.Prohibited;
+        if (!tables.contains(tables.rand_al_cat, cps[cps.len - 1])) return error.Prohibited;
+    }
 }
 
 /// Runs SASLprep, falling back to the unprepared bytes if it fails.
@@ -230,4 +310,53 @@ test "prepOrRaw falls back the way PostgreSQL does" {
     const prepared = try prepOrRaw(testing.allocator, "\u{2168}");
     defer prepared.deinit(testing.allocator);
     try testing.expectEqualStrings("IX", prepared.bytes);
+}
+
+fn expectRfc(expected: []const u8, input: []const u8) !void {
+    const prepared = try prepWith(testing.allocator, input, .rfc4013);
+    defer prepared.deinit(testing.allocator);
+    try testing.expectEqualStrings(expected, prepared.bytes);
+}
+
+test "the RFC 4013 profile agrees with libidn" {
+    // Every answer here is GNU libidn's: stringprep() with the SASLprep
+    // profile and STRINGPREP_NO_UNASSIGNED, which is a stored string.
+    try expectRfc("hunter2", "hunter2");
+    try expectRfc("IX", "I\u{00AD}X");
+    try expectRfc("IX", "\u{2168}");
+    try expectRfc("a", "\u{00AA}");
+    try expectRfc("fi", "\u{FB01}");
+    try expectRfc("\u{00E9}", "e\u{0301}");
+    try expectRfc("a b", "a\u{200B}b");
+    // Prohibited, but normalized to U+0300 before the check.
+    try expectRfc("\u{0300}", "\u{0340}");
+    try expectRfc("\u{00E8}", "e\u{0340}");
+    try expectRfc("\u{05D0}\u{0300}\u{05D1}", "\u{05D0}\u{0340}\u{05D1}");
+    // Mapping to nothing is allowed.
+    try expectRfc("", "\u{00AD}");
+    try expectRfc("\u{05D0}\u{05D1}", "\u{05D0}\u{05D1}");
+
+    for ([_][]const u8{
+        "a\tb", // ASCII control, C.2.1
+        "\x7f",
+        "a\u{2028}b", // LINE SEPARATOR, C.2.2
+        "a\u{0221}b", // unassigned in Unicode 3.2
+        "\u{1F100}", // unassigned in 3.2, though NFKC now makes it "0."
+        "\u{05D0}a\u{05D1}", // bidi: RandALCat with LCat
+    }) |input| {
+        try testing.expectError(error.Prohibited, prepWith(testing.allocator, input, .rfc4013));
+    }
+}
+
+test "the two profiles part where PostgreSQL departs from the RFC" {
+    // An ASCII control character: PostgreSQL's shortcut lets it through.
+    try expectPrep("a\tb", "a\tb");
+    try testing.expectError(error.Prohibited, prepWith(testing.allocator, "a\tb", .rfc4013));
+    // A prohibited character that normalization removes: PostgreSQL checks
+    // before normalizing, the RFC after.
+    try testing.expectError(error.Prohibited, prep(testing.allocator, "\u{0340}"));
+    try expectRfc("\u{0300}", "\u{0340}");
+    // A password that maps to nothing.
+    try testing.expectError(error.Prohibited, prep(testing.allocator, "\u{00AD}"));
+    try expectRfc("", "\u{00AD}");
 }

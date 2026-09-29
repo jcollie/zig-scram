@@ -51,6 +51,7 @@ pub const Client = scram.Client;
 pub const Keys = scram.Keys;
 pub const Options = scram.Options;
 pub const Normalization = scram.Normalization;
+pub const PrepareError = scram.PrepareError;
 pub const ChannelBinding = scram.ChannelBinding;
 pub const ServerErrorValue = messages.ServerErrorValue;
 pub const Error = scram.Error;
