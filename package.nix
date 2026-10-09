@@ -14,7 +14,7 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "scram-sha-256";
-  version = "0.0.0";
+  version = "0.1.0";
 
   src = lib.fileset.toSource {
     root = ./.;
