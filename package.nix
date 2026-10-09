@@ -5,16 +5,16 @@
   lib,
   stdenv,
   callPackage,
-  zig_0_16,
+  zig_0_17,
 }:
 let
   # Generated from build.zig.zon by zon2nix; regenerate with
-  #   nix develop -c zon2nix --16 --nix=build.zig.zon.nix build.zig.zon
+  #   nix develop -c zon2nix --17 --nix=build.zig.zon.nix build.zig.zon
   zigDeps = callPackage ./build.zig.zon.nix { };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "scram-sha-256";
-  version = "0.1.0";
+  version = "0.2.0";
 
   src = lib.fileset.toSource {
     root = ./.;
@@ -26,7 +26,7 @@ stdenv.mkDerivation (finalAttrs: {
     ];
   };
 
-  nativeBuildInputs = [ zig_0_16 ];
+  nativeBuildInputs = [ zig_0_17 ];
 
   # --system does not merely offer the directory, it forbids fetching: a
   # dependency missing from the farm is a build error naming the package

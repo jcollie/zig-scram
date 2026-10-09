@@ -390,14 +390,14 @@ pub const ServerErrorValue = enum {
 
     pub fn parse(text: []const u8) ServerErrorValue {
         for (names, 0..) |name, i| {
-            if (std.mem.eql(u8, name, text)) return @enumFromInt(i);
+            if (std.mem.eql(u8, name, text)) return @fromBackingInt(@intCast(i));
         }
         return .unrecognized;
     }
 
     /// The wire spelling, or `"unrecognized"` for a value that had none.
     pub fn toString(self: ServerErrorValue) []const u8 {
-        const i = @intFromEnum(self);
+        const i = @backingInt(self);
         return if (i < names.len) names[i] else "unrecognized";
     }
 };
@@ -616,8 +616,8 @@ test "server-final-message" {
 }
 
 test "every registered server error round trips" {
-    inline for (@typeInfo(ServerErrorValue).@"enum".fields) |field| {
-        const value: ServerErrorValue = @enumFromInt(field.value);
+    inline for (@typeInfo(ServerErrorValue).@"enum".field_values) |field_value| {
+        const value: ServerErrorValue = @fromBackingInt(field_value);
         if (value == .unrecognized) continue;
         try testing.expectEqual(value, ServerErrorValue.parse(value.toString()));
     }

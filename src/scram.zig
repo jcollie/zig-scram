@@ -129,7 +129,7 @@ test "known vectors" {
     // Password longer than the HMAC block size, and the minimum round count.
     try expectVerifier("SCRAM-SHA-256$1:" ++ test_salt_b64 ++
         "$ZTYlV5N4QSw4xmvOfzGSnxTcpQTWxbcisTRImxbIA80=" ++
-        ":IEnhPEuaGR7Cx3/2XdorpVQfrI9NDht2R4YM3/m9JlY=", "a" ** 200, 1);
+        ":IEnhPEuaGR7Cx3/2XdorpVQfrI9NDht2R4YM3/m9JlY=", &@as([200]u8, @splat('a')), 1);
 }
 
 test "non-default iteration count" {
@@ -272,7 +272,7 @@ test "argument validation" {
     try testing.expectError(error.SaltTooShort, compute(gpa, "pw", "", 4096, .raw));
     try testing.expectError(
         error.SaltTooLong,
-        compute(gpa, "pw", &[_]u8{0} ** (max_salt_length + 1), 4096, .raw),
+        compute(gpa, "pw", &@as([max_salt_length + 1]u8, @splat(0)), 4096, .raw),
     );
 }
 

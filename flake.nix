@@ -57,7 +57,7 @@
           default = pkgs.mkShell {
             name = "zig-scram";
             nativeBuildInputs = [
-              pkgs.zig_0_16
+              pkgs.zig_0_17
               pkgs.reuse
 
               # zon2nix shells out to `zig env`, and prints "unable to execute
@@ -71,7 +71,7 @@
                 nativeBuildInputs = [ pkgs.makeWrapper ];
                 postBuild = ''
                   wrapProgram $out/bin/zon2nix \
-                    --prefix PATH : ${lib.makeBinPath [ pkgs.zig_0_16 ]}
+                    --prefix PATH : ${lib.makeBinPath [ pkgs.zig_0_17 ]}
                 '';
               })
             ]

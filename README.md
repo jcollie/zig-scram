@@ -34,12 +34,21 @@ in the server log, and never reaches `pg_stat_activity`.
 ALTER ROLE alice PASSWORD 'SCRAM-SHA-256$4096:AAECAwQFBgcICQoLDA0ODw==$...';
 ```
 
-Requires Zig 0.16.0.
+Requires Zig 0.17.0; the `zig-0.16` branch and the `v0.1.0` tag build with
+Zig 0.16.0.
 
 ## Install
 
 ```sh
 zig fetch --save git+https://git.jcollie.dev/jeff/zig-scram.git
+```
+
+For Zig 0.16.0, take the `zig-0.16` branch, which holds the last of zig-scram
+to build with it, or the `v0.1.0` tag:
+
+```sh
+zig fetch --save git+https://git.jcollie.dev/jeff/zig-scram.git#zig-0.16
+zig fetch --save git+https://git.jcollie.dev/jeff/zig-scram.git#v0.1.0
 ```
 
 ```zig
@@ -439,7 +448,7 @@ regenerating it — never editing it — so that every hash comes from the
 manifest:
 
 ```sh
-nix develop -c zon2nix --16 --nix=build.zig.zon.nix build.zig.zon
+nix develop -c zon2nix --17 --nix=build.zig.zon.nix build.zig.zon
 ```
 
 The dependency directory is also a flake output of its own, for running
