@@ -82,6 +82,10 @@ pub fn main(init: std.process.Init) !void {
         error.InvalidIterationCount => fail(io, "--iterations must be at least 1", .{}),
         error.SaltTooShort => fail(io, "--salt-length must be at least 1", .{}),
         error.SaltTooLong => fail(io, "--salt-length must be at most {d}", .{scram.max_salt_length}),
+        // Only the RFC 4013 normalization fails this way, and nothing here
+        // asks for it -- --strict-prep runs SASLprep itself, above, so that
+        // it can say which of the two ways the password broke it.
+        error.Unpreparable => fail(io, "password cannot be prepared with SASLprep", .{}),
     };
 
     var buf: [scram.max_encoded_length]u8 = undefined;
